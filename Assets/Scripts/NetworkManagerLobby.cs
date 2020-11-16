@@ -8,13 +8,16 @@ using Mirror;
 
 public class NetworkManagerLobby : NetworkManager
 {
-    [Scene] [SerializeField] private string menuScene = string.Empty;
+    [SerializeField] private int minPlayers = 2;
+    [SerializeField] private string menuScene = string.Empty;
 
     [Header("Room")]
     [SerializeField] private NetworkRoomPlayerLobby roomPlayerPrefab = null;
 
     public static event Action OnClientConnected;
     public static event Action OnClientDisconnected;
+
+    public List<NetworkRoomPlayerLobby> RoomPlayers { get; } = new List<NetworkRoomPlayerLobby>();
 
     public override void OnStartServer() => spawnPrefabs = Resources.LoadAll<GameObject>("SpawnablePrefabs").ToList();
 
@@ -59,8 +62,46 @@ public class NetworkManagerLobby : NetworkManager
     {
         if(SceneManager.GetActiveScene().name == menuScene)
         {
+            bool isLeader = RoomPlayers.Count == 0;
             NetworkRoomPlayerLobby roomPlayerInstance = Instantiate(roomPlayerPrefab);
+            roomPlayerInstance.IsLeader = isLeader;
             NetworkServer.AddPlayerForConnection(conn, roomPlayerInstance.gameObject);
         }
+    }
+
+    public override void OnServerDisconnect(NetworkConnection conn)
+    {
+        if(conn.identity != null)
+        {
+            var player = conn.identity.GetComponent<NetworkRoomPlayerLobby>();
+            RoomPlayers.Remove(player);
+            NotifyPlayersOFReadyState();
+        }
+        base.OnServerDisconnect(conn);
+    }
+
+    public void NotifyPlayersOFReadyState()
+    {
+        foreach(var player in RoomPlayers)
+        {
+            player.HandleReadyToStart(IsReadyToStart());
+        }
+    }
+
+    private bool IsReadyToStart()
+    {
+        if(numPlayers < minPlayers) { return false; }
+
+        foreach (var player in RoomPlayers)
+        {
+            if(!player.IsReady) { return false; }
+        }
+
+        return true;
+    }
+
+    public override void OnStopServer()
+    {
+        RoomPlayers.Clear();
     }
 }
